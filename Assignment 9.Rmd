@@ -1,0 +1,332 @@
+---
+title: "Assignment 9"
+author: "Chamundeswari Koppisetti"
+date: "11/14/2020"
+output: pdf_document
+---
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+### 7.5.1 Exercise:
+
+According to Importance Sampling, we have:
+$$
+\begin{aligned}
+\mu = \int h(x)f(x)dx = \int h(x)\frac{f(x)}{g(x)}g(x)dx 
+\end{aligned}
+$$
+
+To estimate $\mu$ we can do the following: 
+
+1. Generate $X_1, ...X_N$, iid $\sim$ density $g$
+2. Estimate $\mu$ by $\hat{\mu}$ = $\frac{1}{n}$$\sum_{i=1}^{n}$ $h(X_i)$ $\frac{f(X_i)}{g(X_i)}$.
+
+Here, we have $h(x)$ = $x^2$
+
+#### 1.Solution:
+
+We have $g(x)$ is standard normal density, so the importance sampling is as following:
+
+```{r}
+h <- function(x) x^2
+f <- function(x) 1 / 5 / sqrt(2 * pi) * x^2 * exp(-(x - 2)^2 / 2)
+nrep <- 1000
+n <- c(1000, 10000, 50000)
+result <- sapply(n, function(i) replicate(nrep,
+                                          {x <- rnorm(i, mean = 0, sd = 1); 
+                                          mean(h(x) * f(x) / dnorm(x, mean = 0, 
+                                                                   sd = 1))})) 
+
+```
+
+Estimate means:
+
+```{r}
+apply(result, 2, mean)
+```
+
+Estimate variances of the estimates:
+
+```{r}
+apply(result, 2, sd)
+```
+
+
+#### 2.Solution:
+
+In order to reduce the variance of $\hat{\mu}$, $g(x)$ should be in proportion to $h(x)g(x)$ as much as possible. In this case, we can choose $g(x)$ as $N(3.3, 0.9)$
+
+$$
+\begin{aligned}
+h(x)f(x) = \frac{1}{5\sqrt{2\pi}} x^4 e^{-\frac{(x-2)^2}{2}}
+\end{aligned}
+$$
+
+The following plots $h(x)f(x)$ in blue and $10$ $*$ $g(x)$ in red. As we see, these two lines are almost close to each other. Hence, the estimation would be better than using a standard normal distribution as we did earlier.
+
+```{r}
+hf <- function(x) h(x)*f(x)
+curve(10 * dnorm(x, 3.3, 0.9), col = 'red', xlim = c(0, 7))
+curve(hf(x), col = 'blue', add = T)
+```
+
+
+#### 3.Solution:
+
+Now, the estimate means:
+
+```{r}
+result2 <- sapply(n, function(i) replicate(nrep,
+                                           {x <- rnorm(i, mean = 3.3, sd = 0.9);
+                                           mean(h(x) * f(x) / dnorm(x, mean = 3.3, sd = 0.9))}))
+apply(result2, 2, mean)
+```
+
+Estimate variances of the estimates:
+
+```{r}
+apply(result2, 2, sd)
+```
+
+
+#### 4.Solution:
+
+The true result should be $\int_{-\infty}^{+\infty}h(x)f(x)dx$
+
+```{r}
+trueValue <- integrate(hf, -Inf, Inf)
+trueValue
+```
+As we can see, if we choose $g(x)$ as $N(3.3, 0.9)$, the estimate mean would be closer to the true result:
+```{r}
+sum(abs(apply(result, 2, mean) - trueValue$value));
+```
+
+```{r}
+sum(abs(apply(result2, 2, mean) - trueValue$value));
+```
+The variances of the estimates would be much smaller:
+
+```{r}
+apply(result, 2, sd); apply(result2, 2, sd)
+```
+
+
+To verify the result:
+$$
+\begin{aligned}
+E\{[h(x)\frac{f(x)}{g(x)}]^2\} \geq \{E[h(x)\frac{f(x)}{g(x)}]\}^2 = \mu^2   
+\end{aligned}
+$$
+with $=$ holds iff:
+
+$$
+\begin{aligned}
+h(x)\frac{f(x)}{g(x)} \small\equiv constant \Rightarrow g(x) \propto h(x)f(x)   
+\end{aligned}
+$$
+So, if we can find a better distribution that is in proportion to $h(x)g(x)$, we can use it as $g(x)$ to get a
+better estimate mean.
+
+
+
+### 7.5.2 Exercise:
+
+
+#### 1.Solution:
+
+We can write the path of $S(t)$ as following. $nsamp$ is the number of sample size, $tgrid$ is the time spot that we collect $S(t)$
+
+```{r}
+pathBM <- function(nsamp, tgrid, sigma) {
+  tt <- c(0, tgrid)
+  dt <- diff(tt)
+  nt <- length(tgrid)
+  dw <- matrix(rnorm(nsamp * nt, mean = 0, sd = sigma * sqrt(dt)), nsamp, nt, byrow = TRUE)
+  return(t(apply(dw, 1, cumsum)))
+}
+```
+
+
+#### 2.Solution:
+
+We have:
+$$
+\begin{aligned}
+S(t) = S(0)e^{(r-\sigma^2/2)t + \sigma W(t)}
+\end{aligned}
+$$
+We can write a function to calculate $P_A$, $P_E$, $P_G$ and $S(T)$:
+Firstly, we need to sample paths of this Brownian motion, use the paths to generate $S(t)$, then, based on the formula calculate the values and return their correlation.
+
+```{r}
+allCorr <- function(nsamp, r, sigma, S0, K, tgrid) {
+  wt <- pathBM(nsamp, tgrid, sigma)
+  nt <- length(tgrid)
+  TT <- tgrid[nt]
+  S_t <- S0 * exp((r - sigma^2 / 2) * matrix(tgrid, nsamp, nt, byrow = TRUE) + wt)
+  S_T <- S_t[, nt]
+  S_A <- rowMeans(S_t)
+  P_A <- pmax(S_A - K, 0) * exp(-r * TT)
+  P_E <- pmax(S_T - K, 0) * exp(-r * TT)
+  S_G <- exp(rowMeans(log(S_t)))
+  P_G <- pmax(S_G - K, 0) * exp(-r * TT)
+  Corr_PA_ST <- cor(P_A, S_T)
+  Corr_PA_PE <- cor(P_A, P_E)
+  Corr_PA_PG <- cor(P_A, P_G)
+  return(c(Corr_PA_ST, Corr_PA_PE, Corr_PA_PG))
+}
+```
+
+Set the initial parameters, and use a loop to return the correlation at different $K$. The first column is the correlation between $P_A$ and $S(T)$, the second column is correlation between $P_A$ and $P_E$, and the last
+column is the correlation between $P_A$ and $P_G$
+
+```{r}
+S0 <- 1
+r <- 0.05
+n <- 12
+sigma <- 0.5
+K <- c(1.1, 1.2, 1.3, 1.4, 1.5)
+TT <- 1
+tgrid <- seq(0, TT, length = (n + 1))[-1]
+nsamp <- 5000
+result <- matrix(NA, nrow = length(K), ncol = 3)
+
+for (i in 1:length(K)) {
+  result[i, ] <- allCorr(nsamp, r, sigma, S0, K[i], tgrid)
+}
+
+result
+```
+
+We can see that, the correlation coefficient becomes smaller as $K$ increases. The reason is that, as $K$ becomes bigger, the chances for $P_A$, $P_E$, $P_G$ equal to zero will become bigger, then there will be lesser information and the correltaion will become smaller. The correlation between $P_A$ and $P_G$ is much more stable than the rest.
+
+
+#### 3.Solution:
+
+In this case, reset $K$ and $\sigma$, use a loop to return the correlations at different $\sigma$.
+
+```{r}
+K <- 1.5
+sigma <- c(0.2, 0.3, 0.4, 0.5)
+result <- matrix(NA, nrow = length(sigma), ncol = 3)
+
+for (i in 1:length(sigma)) {
+  result[i, ] <- allCorr(nsamp, r, sigma[i], S0, K, tgrid)
+}
+
+result
+```
+
+As the standard deviation parameter $\sigma$ becomes bigger, $\sigma$$W(t)$ will become bigger. Therefore, in general, it’s more possible for $S(T)$ $\geq$ $K$, we’ll have more information and the correlation will become bigger. Besides, the correlation between $P_A$ and $P_G$ is much more stable than other’s.
+
+
+#### 4.Solution:
+
+Reset $K$, $\sigma$ and $T$. Write a loop to return the value of correlation with different $T$:
+
+```{r}
+K <- 1.5
+sigma <- 0.5
+TT <- c(0.4, 0.7, 1, 1.3, 1.6)
+result <- matrix(NA, nrow = length(TT), ncol = 3)
+
+for (i in 1:length(TT)) {
+  tgrid <- seq(0, TT[i], length = (n + 1))[-1]
+  result[i, ] <- allCorr(nsamp, r, sigma, S0, K, tgrid)
+}
+
+result
+```
+
+In this case, since $n$ is fixed, the parameters $t$ and $\sigma$$W(t)$ will become bigger as $T$ becomes bigger. Therefore,in general, it’s more possible for $S(T)$ $\geq$ $K$, we’ll have more information and the correlation will become bigger. Again, the correlation between $P_A$ and $P_G$ is much more stable than other’s.
+
+
+#### 5.Solution:
+
+We need to reset the initial parameters and rewrite the function to return the control variate $MC$ estimator
+and the $MC$ estimator with no control variate. We have:
+
+$$
+\begin{aligned}
+\frac{S_G}{S(0)} \sim LN((r-\frac{1}{2}\sigma^2)\bar t, \bar \sigma^2 \bar t)
+\end{aligned}
+$$
+With:
+
+$$
+\begin{aligned}
+\bar t = \frac{1}{n}\sum_{i=1}^{n}t_i \\
+\bar \sigma^2 = \frac{\sigma^2}{n^2 \bar t}\sum_{i=1}^{n}(2i-1)t_{n+1-i}
+\end{aligned}
+$$
+Further more, we have:
+
+$$
+\begin{aligned}
+E[(S_G-K)^+]\ = Ae^{\mu+\frac{1}{2}\sigma^2}*\phi(d) - K\phi(d-\sigma_*)   
+\end{aligned}
+$$
+where $\phi$ is the distribution function of $N(0, 1)$, and:
+
+$$
+\begin{aligned}
+\begin{cases}
+d = \frac{1}{\sigma_*}(ln \frac{A}{K}+\mu+\sigma^2_*) \\
+A = S(0) \\
+\mu = (r-\frac{1}{2}\sigma^2)\bar t \\
+\sigma^2_* = \bar\sigma^2\bar t
+\end{cases}
+\end{aligned}
+$$
+
+
+We can write the code as following:
+
+```{r}
+K <- 1.5
+sigma <- 0.4
+TT <- 1
+tgrid <- seq(0, TT, length = (n + 1))[-1]
+
+valueAppr <- function(nsamp, r, sigma, S0, K, tgrid) {
+  wt <- pathBM(nsamp, tgrid, sigma)
+  nt <- length(tgrid)
+  TT <- tgrid[nt]
+  S_t <- S0 * exp((r - sigma^2 / 2) * matrix(tgrid, nsamp, nt, byrow = TRUE) + wt)
+  S_T <- S_t[, nt]
+  P_A <- pmax(rowMeans(S_t) - K, 0) * exp(-r * TT)
+  V_A <- mean(P_A)
+  
+  ## P_G as a control variate
+  P_G <- pmax(exp(rowMeans(log(S_t))) - K, 0) * exp(-r * TT)
+  tBar <- mean(tgrid)
+  sigmaBar2 <- sigma^2 / nt^2 / tBar * sum((2 * seq(nt) - 1) * rev(tgrid))
+  
+  mu <- (r - 0.5 * sigma^2) * tBar
+  sigma_star <- sqrt(sigmaBar2 * tBar)
+  d <- (log(S0 / K) + mu + sigma_star^2) / sigma_star
+  
+  P_G_True <- S0 * exp(mu + 0.5 * sigma_star^2) * pnorm(d) - K * pnorm(d - sigma_star)
+  V_G <- V_A - cov(P_A, P_G) / var(P_G) * (mean(P_G) - P_G_True)
+  return(c(V_A, V_G))
+}
+```
+
+Then run the simulation 200 times, each with a sample size of 5000, and compare the results.
+Mean of each method:
+
+```{r}
+result <- replicate(200, valueAppr(nsamp = 5000, r, sigma, S0, K, tgrid))
+apply(result, 1, mean)
+```
+
+SD of each method:
+
+```{r}
+apply(result, 1, sd)
+```
+
